@@ -4,6 +4,7 @@
 #include <QFileDialog>
 #include <QTimer>
 #include <QFileInfo>
+#include <QStyle>
 
 extern QString formatTime(qint64 milliseconds);
 extern void appendLog(const QString &logTitle,const QString &logStr);
@@ -30,6 +31,7 @@ MainWindow::MainWindow(QWidget *parent) :
 
     this->setWindowFlags(Qt::Window | Qt::WindowMinMaxButtonsHint | Qt::WindowCloseButtonHint);
 
+    initWindowStyle();
     initStatusBar();
 
     initRenderWidgets();
@@ -38,21 +40,7 @@ MainWindow::MainWindow(QWidget *parent) :
     resetVideoView(0);
 
     ui->progressBar->setValue(0);
-
-
-    ui->progressBar->setStyleSheet(R"(
-       QProgressBar {
-           border: 1px solid #000000;
-           border-radius: 5px;
-           background: transparent;
-           text-align: center;
-       }
-       QProgressBar::chunk {
-           background: #87CEFA;
-           width: 1px;
-           margin: 0px;
-       }
-   )");
+    updatePlaybackUi(false);
 
     SDL_version linked;
     SDL_GetVersion(&linked);
@@ -175,9 +163,12 @@ void MainWindow::setFileNameShow(QString fileName)
 
 void MainWindow::showVideoInfo(int width, int height, double frameRate, QString codecName)
 {
-    QString info = QString("%1:%2x%3 %4:%5 %6:%7")
-            .arg(QString("分辨率")).arg(width).arg(height).arg(QString("帧率")).arg(frameRate).
-            arg(QString("解码器")).arg(QString(codecName));
+    const QString resolutionText = (width > 0 && height > 0) ? QString("%1x%2").arg(width).arg(height) : "-";
+    const QString frameRateText = frameRate > 0 ? QString::number(frameRate) : "-";
+    const QString codecText = codecName.isEmpty() ? "-" : codecName;
+    QString info = QString("%1:%2 %3:%4 %5:%6")
+            .arg(QString("分辨率")).arg(resolutionText).arg(QString("帧率")).arg(frameRateText).
+            arg(QString("解码器")).arg(codecText);
 
     m_videoInfoLabel->setText(info);
 }
@@ -194,9 +185,10 @@ void MainWindow::stopVideoPlay()
 
     resetVideoView(300);
 
-    setFileNameShow("");
+    setFileNameShow(tr("未打开视频"));
     updateVideoTime(-1,-1);
-    showVideoInfo(0,0,0,"");
+    showVideoInfo(0,0,0,"-");
+    updatePlaybackUi(false);
 }
 
 void MainWindow::resetVideoView(int focusDelayMs)
@@ -225,6 +217,7 @@ void MainWindow::startVideo(const QString &url, bool closeNetworkWindow)
 
     QMetaObject::invokeMethod(m_videoDecode, "play", Qt::QueuedConnection);
     QMetaObject::invokeMethod(m_videoDecode, "open", Qt::QueuedConnection, Q_ARG(QString, url));
+    updatePlaybackUi(true);
 
     QTimer::singleShot(500, this, [=]() {
         if (!m_videoDecode->getPlayStatus())
@@ -243,12 +236,12 @@ void MainWindow::togglePlay()
     if (m_videoDecode->getPlayStatus())
     {
         m_videoDecode->pause();
-        ui->playCtrl_btn->setText("播放");
+        updatePlaybackUi(false);
         return;
     }
 
     m_videoDecode->play();
-    ui->playCtrl_btn->setText("暂停");
+    updatePlaybackUi(true);
 }
 
 void MainWindow::on_action_openLocal_triggered()
@@ -306,8 +299,14 @@ void MainWindow::initRenderMenu()
     QActionGroup *renderGroup = new QActionGroup(this);
     renderGroup->setExclusive(true);
 
-    m_useSDLRendererAction = ui->menu->addAction(tr("使用 SDL2 绘制"));
-    m_useOpenGLRendererAction = ui->menu->addAction(tr("使用 OpenGL 绘制"));
+    QMenu *viewMenu = ui->menuBar->addMenu(tr("视图"));
+    QMenu *rendererMenu = viewMenu->addMenu(tr("渲染器"));
+
+    m_useSDLRendererAction = rendererMenu->addAction(tr("SDL2 渲染"));
+    m_useOpenGLRendererAction = rendererMenu->addAction(tr("OpenGL 渲染"));
+    viewMenu->addSeparator();
+    QAction *enterFullScreenAction = viewMenu->addAction(tr("进入全屏"));
+    QAction *exitFullScreenAction = viewMenu->addAction(tr("退出全屏"));
 
     m_useSDLRendererAction->setCheckable(true);
     m_useOpenGLRendererAction->setCheckable(true);
@@ -322,8 +321,112 @@ void MainWindow::initRenderMenu()
     connect(m_useOpenGLRendererAction, &QAction::triggered, this, [this]() {
         switchRenderer(RenderType::OpenGL);
     });
+    connect(enterFullScreenAction, &QAction::triggered, this, [this]() {
+        setCurrentRendererFullScreen(true);
+    });
+    connect(exitFullScreenAction, &QAction::triggered, this, [this]() {
+        setCurrentRendererFullScreen(false);
+    });
 }
 
+void MainWindow::initWindowStyle()
+{
+    setWindowTitle(tr("VideoPlay"));
+    setMinimumSize(820, 560);
+
+    ui->action_openLocal->setIcon(style()->standardIcon(QStyle::SP_DialogOpenButton));
+    ui->action_openNetWork->setIcon(style()->standardIcon(QStyle::SP_DriveNetIcon));
+
+    ui->playCtrl_btn->setIcon(style()->standardIcon(QStyle::SP_MediaPlay));
+    ui->stopPlay_btn->setIcon(style()->standardIcon(QStyle::SP_MediaStop));
+    ui->playCtrl_btn->setToolTip(tr("播放或暂停"));
+    ui->stopPlay_btn->setToolTip(tr("停止播放"));
+
+    setStyleSheet(R"(
+        QMainWindow {
+            background: #111419;
+        }
+        QMenuBar {
+            background: #f7f8fa;
+            border-bottom: 1px solid #d9dee7;
+            padding: 3px 8px;
+            color: #222831;
+        }
+        QMenuBar::item {
+            padding: 6px 12px;
+            border-radius: 4px;
+        }
+        QMenuBar::item:selected {
+            background: #e8edf5;
+        }
+        QMenu {
+            background: #ffffff;
+            border: 1px solid #cfd6e2;
+            padding: 6px;
+        }
+        QMenu::item {
+            padding: 7px 28px;
+            border-radius: 4px;
+        }
+        QMenu::item:selected {
+            background: #edf4ff;
+            color: #0f4c81;
+        }
+        QWidget#centralWidget {
+            background: #111419;
+        }
+        QWidget#videoFrame {
+            background: #07090d;
+            border: 1px solid #2e3540;
+            border-radius: 8px;
+        }
+        QWidget#controlBar {
+            background: #181d24;
+            border-top: 1px solid #2b323d;
+        }
+        QLabel#label_time {
+            color: #d7dde8;
+            font-size: 12px;
+            min-width: 112px;
+        }
+        QProgressBar {
+            border: 1px solid #303948;
+            border-radius: 4px;
+            background: #0f1319;
+            color: #d7dde8;
+            text-align: center;
+            min-height: 10px;
+            max-height: 10px;
+        }
+        QProgressBar::chunk {
+            border-radius: 3px;
+            background: #4aa3ff;
+        }
+        QPushButton {
+            background: #26313f;
+            border: 1px solid #3b4858;
+            border-radius: 5px;
+            color: #f5f7fb;
+            min-height: 30px;
+            padding: 7px 14px;
+            min-width: 74px;
+        }
+        QPushButton:hover {
+            background: #314052;
+        }
+        QPushButton:pressed {
+            background: #1f2833;
+        }
+        QStatusBar {
+            background: #f7f8fa;
+            color: #3a4250;
+            border-top: 1px solid #d9dee7;
+        }
+        QStatusBar QLabel {
+            color: #3a4250;
+        }
+    )");
+}
 
 void MainWindow::initStatusBar()
 {
@@ -331,14 +434,27 @@ void MainWindow::initStatusBar()
     ui->statusBar->addWidget(w);
 
     m_statusBarLayout = new QHBoxLayout;
+    m_statusBarLayout->setContentsMargins(6, 0, 6, 0);
+    m_statusBarLayout->setSpacing(16);
 
-    m_fileNameLabel = new QLabel;
-    m_videoInfoLabel = new QLabel;
+    m_fileNameLabel = new QLabel(tr("未打开视频"));
+    m_videoInfoLabel = new QLabel(tr("分辨率:- 帧率:- 解码器:-"));
+    m_fileNameLabel->setMinimumWidth(220);
+    m_fileNameLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    m_videoInfoLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    ui->statusBar->setMinimumHeight(m_fileNameLabel->fontMetrics().height() + 12);
 
     m_statusBarLayout->addWidget(m_fileNameLabel);
     m_statusBarLayout->addWidget(m_videoInfoLabel);
+    m_statusBarLayout->addStretch();
 
     w->setLayout(m_statusBarLayout);
+}
+
+void MainWindow::updatePlaybackUi(bool playing)
+{
+    ui->playCtrl_btn->setText(playing ? tr("暂停") : tr("播放"));
+    ui->playCtrl_btn->setIcon(style()->standardIcon(playing ? QStyle::SP_MediaPause : QStyle::SP_MediaPlay));
 }
 
 void MainWindow::initVideoDecode()
@@ -454,11 +570,11 @@ void MainWindow::switchRenderer(RenderType renderType)
     if (wasPlaying)
     {
         m_videoDecode->play();
-        ui->playCtrl_btn->setText("暂停");
+        updatePlaybackUi(true);
     }
     else
     {
-        ui->playCtrl_btn->setText("播放");
+        updatePlaybackUi(false);
     }
 }
 

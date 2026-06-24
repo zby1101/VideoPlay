@@ -64,6 +64,7 @@ private:
     void initStatusBar();
     void initRenderWidgets();
     void initRenderMenu();
+    void initWindowStyle();
     void initVideoDecode();
 
     // 当前只有一个渲染器接收帧，避免切换绘制方式时两个窗口同时消费 AVFrame
@@ -75,6 +76,7 @@ private:
     void resetVideoView(int focusDelayMs);
     void startVideo(const QString &url, bool closeNetworkWindow);
     void togglePlay();
+    void updatePlaybackUi(bool playing);
 
     QString m_lastUrl;
 
