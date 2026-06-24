@@ -66,4 +66,14 @@ SDL2 全屏模式使用独立 SDL 窗口，而不是直接把嵌入 Qt 的 SDL �
 
 ## License
 
-本项目可使用 MIT License。若项目中包含第三方库，请同时遵守 Qt、FFmpeg、SDL2 等依赖库各自的许可证要求。
+本项目源码使用 MIT License，详见 [LICENSE](LICENSE)。
+
+项目依赖 Qt、FFmpeg 和 SDL2，这些第三方库不属于本项目 MIT License 的授权范围，需要分别遵守它们各自的许可证要求。第三方依赖说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+当前 `VideoPlay.pro` 使用的是 GPL shared 版本 FFmpeg：
+
+```pro
+FFMPEG_HOME = Y:\work-1\win\video\ffmpeg-n5.1.6-18-g1bcb1be4a2-win64-gpl-shared-5.1
+```
+
+如果发布包含该 FFmpeg DLL 的二进制程序，需要遵守 FFmpeg/GPL 的相关要求。若希望降低二进制分发时的 GPL 传染风险，请改用符合要求的 LGPL shared FFmpeg 构建，并确认该 FFmpeg 没有启用 `--enable-gpl` 或 `--enable-nonfree`。
