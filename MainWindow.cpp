@@ -81,8 +81,9 @@ MainWindow::~MainWindow()
 
 void MainWindow::updateVideoTime(qint64 totalTime, qint64 currentTime)
 {
-    ui->progressBar->setMaximum(static_cast<int>(totalTime));
-    ui->progressBar->setValue(static_cast<int>(currentTime));
+    const bool hasDuration = totalTime > 0;
+    ui->progressBar->setMaximum(hasDuration ? static_cast<int>(totalTime) : 0);
+    ui->progressBar->setValue(hasDuration && currentTime > 0 ? static_cast<int>(currentTime) : 0);
 
     QString totalTimeText = formatTime(totalTime);
     QString currentTimeText = formatTime(currentTime);
@@ -221,7 +222,10 @@ void MainWindow::startVideo(const QString &url, bool closeNetworkWindow)
 
     QTimer::singleShot(500, this, [=]() {
         if (!m_videoDecode->getPlayStatus())
+        {
+            updatePlaybackUi(false);
             return;
+        }
 
         QFileInfo info(url);
         setFileNameShow(info.fileName());

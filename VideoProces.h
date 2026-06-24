@@ -58,6 +58,8 @@ public slots:
     bool getPlayStatus();
 
 private:
+    bool applyPendingSeek();
+
     QThread m_videoDecodeThread;
 
     AVFrame*  m_frame = nullptr;
@@ -78,6 +80,8 @@ private:
 
     QWaitCondition m_playStatusCondition;
     bool m_stopRequested = false;
+    bool m_seekRequested = false;
+    int64_t m_pendingSeekOffsetUs = 0;
 
     char *m_error = nullptr;
 };

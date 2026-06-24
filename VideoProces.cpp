@@ -223,6 +223,8 @@ void VideoDecode::stopDecoding()
     QMutexLocker locker(&m_playStatusMutex);
     m_isPlaying = false;
     m_stopRequested = true;
+    m_seekRequested = false;
+    m_pendingSeekOffsetUs = 0;
     appendLog("VideoDecode","Decoding stopped. m_isPlaying set to false.");
     m_playStatusCondition.wakeAll();
 }
@@ -238,6 +240,8 @@ bool VideoDecode::open(QString url)
     {
         QMutexLocker locker(&m_playStatusMutex);
         m_stopRequested = false;
+        m_seekRequested = false;
+        m_pendingSeekOffsetUs = 0;
     }
 
     if (m_isPlaying)
@@ -286,7 +290,7 @@ bool VideoDecode::open(QString url)
         m_isPlaying = false;
         return false;
     }
-    m_totalTime = m_formatContext->duration / (AV_TIME_BASE / 1000);
+    m_totalTime = m_formatContext->duration > 0 ? m_formatContext->duration / (AV_TIME_BASE / 1000) : -1;
 
     m_videoStreamIndex = av_find_best_stream(m_formatContext, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
     if(m_videoStreamIndex < 0)
@@ -337,7 +341,7 @@ bool VideoDecode::open(QString url)
 
     m_codecContext->flags2 |= AV_CODEC_FLAG2_FAST;
     m_codecContext->thread_type = FF_THREAD_SLICE;
-    m_codecContext->thread_count = 4;
+    m_codecContext->thread_count = 0;
 
     ret = avcodec_open2(m_codecContext, nullptr, nullptr);
     if(ret < 0)
@@ -379,6 +383,12 @@ bool VideoDecode::open(QString url)
             }
         }
 
+        if (applyPendingSeek())
+        {
+            av_packet_unref(m_packet);
+            continue;
+        }
+
         if (!m_videoDecodeThread.isRunning())
         {
             appendLog("VideoDecode","Thread is stopping. Exiting decode loop.");
@@ -394,8 +404,11 @@ bool VideoDecode::open(QString url)
         {
              timebase = m_formatContext->streams[m_videoStreamIndex]->time_base;
              avTimeBase = {1,AV_TIME_BASE};
-             packetTimeUs = av_rescale_q(m_packet->dts,timebase,avTimeBase);
              elapsedUs = av_gettime() - m_startTime;
+
+             packetTimeUs = 0;
+             if (!m_isNetworkVideo && m_packet->dts != AV_NOPTS_VALUE)
+                 packetTimeUs = av_rescale_q(m_packet->dts,timebase,avTimeBase);
 
              if (packetTimeUs > elapsedUs)
                  av_usleep(static_cast<uint>(packetTimeUs - elapsedUs));
@@ -432,6 +445,51 @@ bool VideoDecode::open(QString url)
     return true;
 }
 
+bool VideoDecode::applyPendingSeek()
+{
+    int64_t seekOffsetUs = 0;
+    {
+        QMutexLocker locker(&m_playStatusMutex);
+        if (!m_seekRequested)
+            return false;
+
+        seekOffsetUs = m_pendingSeekOffsetUs;
+        m_seekRequested = false;
+        m_pendingSeekOffsetUs = 0;
+    }
+
+    if (!m_formatContext || !m_codecContext || m_videoStreamIndex < 0)
+    {
+        appendLog("VideoDecode","Cannot seek: Invalid format context or video index.");
+        return false;
+    }
+
+    int64_t targetUs = av_gettime() - m_startTime + seekOffsetUs;
+    if (targetUs < 0)
+        targetUs = 0;
+
+    if (m_totalTime > 0)
+    {
+        const int64_t durationUs = m_totalTime * 1000;
+        if (targetUs > durationUs)
+            targetUs = durationUs;
+    }
+
+    const AVRational timeBase = m_formatContext->streams[m_videoStreamIndex]->time_base;
+    const int64_t targetPts = av_rescale_q(targetUs, {1, AV_TIME_BASE}, timeBase);
+    if (av_seek_frame(m_formatContext, m_videoStreamIndex, targetPts, AVSEEK_FLAG_BACKWARD | AVSEEK_FLAG_ANY) < 0)
+    {
+        appendLog("VideoDecode","Seek failed.");
+        return false;
+    }
+
+    avcodec_flush_buffers(m_codecContext);
+    m_startTime = av_gettime() - targetUs;
+    emit videoTime(m_totalTime, targetUs / 1000);
+    appendLog("VideoDecode",QString("Seeked to %1 ms.").arg(targetUs / 1000));
+    return true;
+}
+
 void VideoDecode::seekBackward(int second)
 {
     QMutexLocker locker(&m_playStatusMutex);
@@ -442,31 +500,11 @@ void VideoDecode::seekBackward(int second)
         return;
     }
 
-    m_isPlaying = false;
-
-    int64_t targetPts = av_gettime() - m_startTime - second * 1000;
-    if (targetPts < 0)
-    {
-        appendLog("VideoDecode","Target time is less than 0. Setting to 0.");
-        targetPts = 0;
-    }
-
-    targetPts = av_rescale_q(targetPts, {1, AV_TIME_BASE}, m_formatContext->streams[m_videoStreamIndex]->time_base);
-
-    if (av_seek_frame(m_formatContext, m_videoStreamIndex, targetPts, AVSEEK_FLAG_BACKWARD | AVSEEK_FLAG_ANY) < 0)
-    {
-        appendLog("VideoDecode","Seek backward failed.");
-        m_isPlaying = true;
-        return;
-    }
-
-    avcodec_flush_buffers(m_codecContext);
-
-    m_startTime = av_gettime() - targetPts;
-    m_isPlaying = true;
+    m_pendingSeekOffsetUs -= static_cast<int64_t>(second) * AV_TIME_BASE;
+    m_seekRequested = true;
     m_playStatusCondition.wakeAll();
 
-    appendLog("VideoDecode",QString("Seeked backward %1 second.").arg(second));
+    appendLog("VideoDecode",QString("Seek backward requested: %1 second.").arg(second));
 }
 
 void VideoDecode::seekForward(int second)
@@ -479,30 +517,9 @@ void VideoDecode::seekForward(int second)
         return;
     }
 
-    m_isPlaying = false;
+    m_pendingSeekOffsetUs += static_cast<int64_t>(second) * AV_TIME_BASE;
+    m_seekRequested = true;
     m_playStatusCondition.wakeAll();
 
-    int64_t targetPts = av_gettime() - m_startTime + second * 1000;
-    int64_t durationMs = m_formatContext->duration / (AV_TIME_BASE / 1000);
-    if (targetPts > durationMs)
-    {
-        appendLog("VideoDecode","Target time exceeds video duration.");
-    }
-
-    targetPts = av_rescale_q(targetPts, {1, AV_TIME_BASE}, m_formatContext->streams[m_videoStreamIndex]->time_base);
-
-    if (av_seek_frame(m_formatContext, m_videoStreamIndex, targetPts, AVSEEK_FLAG_BACKWARD | AVSEEK_FLAG_ANY) < 0)
-    {
-        appendLog("VideoDecode","Seek forward failed.");
-        m_isPlaying = true;
-        return;
-    }
-
-    avcodec_flush_buffers(m_codecContext);
-
-    m_startTime = av_gettime() - second * 1000;
-    m_isPlaying = true;
-    m_playStatusCondition.wakeAll();
-
-    appendLog("VideoDecode",QString("Seeked forward %1 second.").arg(second));
+    appendLog("VideoDecode",QString("Seek forward requested: %1 second.").arg(second));
 }
