@@ -1,4 +1,6 @@
-# VideoPlay
+# VideoPlay - Qt FFmpeg SDL2 Video Player
+
+A lightweight video player based on Qt5, FFmpeg, SDL2 and QOpenGLWidget.
 
 基于Qt、FFmpeg、SDL2 和 QOpenGLWidget 的视频播放器。项目支持本地视频文件播放、网络视频流播放，并可以在 SDL2 和 OpenGL 两种绘制方式之间切换。
 

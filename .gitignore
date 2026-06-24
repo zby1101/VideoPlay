@@ -5,3 +5,8 @@ UI/
 *.obj
 *.log
 *.tmp
+*.pro.user
+*.pro.user.*
+build/
+*.user
+.DS_Store
