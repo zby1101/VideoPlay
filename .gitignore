@@ -1,0 +1,7 @@
+MOC/
+OBJ/
+UI/
+*.o
+*.obj
+*.log
+*.tmp
