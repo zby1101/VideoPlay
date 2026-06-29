@@ -101,7 +101,7 @@ void SDL2Widget::setFullScreen(bool flag)
 
     releaseSdlObjects();
 
-    // 从全屏回到嵌入模式前先显示 QWidget，否则 SDL_CreateWindowFrom 可能拿不到有效窗口
+    // 回到嵌入模式前先把 QWidget 显示出来，SDL 才拿得到窗口
     if (!flag)
         show();
 
@@ -209,7 +209,7 @@ bool SDL2Widget::createEmbeddedRenderer()
 
 bool SDL2Widget::createFullscreenRenderer()
 {
-    // Qt 原生窗口全屏时 SDL 渲染器容易丢画面，独立 SDL 窗口更稳定
+    // Qt 原生窗口直接全屏容易丢画面，独立 SDL 窗口稳一些
     m_sdlWindow = SDL_CreateWindow("VideoPlay", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                  1280, 720, SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_SHOWN);
     if (!m_sdlWindow)
@@ -295,7 +295,7 @@ void SDL2Widget::renderTexture()
         SDL_GetRendererOutputSize(m_sdlRenderer, &outputWidth, &outputHeight);
         if (outputWidth <= 0 || outputHeight <= 0)
         {
-            // 嵌入窗口刚切换尺寸时 SDL 可能暂时拿不到输出尺寸
+            // 窗口刚变尺寸时 SDL 偶尔拿不到输出尺寸
             outputWidth = width();
             outputHeight = height();
         }
@@ -357,7 +357,7 @@ void SDL2Widget::cacheYuvFrame(const AVFrame *frame, int width, int height)
     uint8_t *dstU = dstY + ySize;
     uint8_t *dstV = dstU + uvSize;
 
-    // FFmpeg 每行可能带 padding，逐行拷贝可以避免花屏
+    // FFmpeg 行尾可能有 padding，逐行拷贝不容易花屏
     for (int y = 0; y < height; ++y)
         memcpy(dstY + y * width, frame->data[0] + y * frame->linesize[0], width);
     for (int y = 0; y < uvHeight; ++y)

@@ -7,7 +7,7 @@
 namespace Ui {
 class OpenNetWorkVideoWindow;
 }
-// 输入网络视频地址并通知主窗口开始播放
+// 填网络地址的小窗口
 class OpenNetWorkVideoWindow : public QMainWindow
 {
     Q_OBJECT

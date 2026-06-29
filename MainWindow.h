@@ -7,6 +7,7 @@
 #include <QMenu>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QComboBox>
 
 #include "SDL2Widget.h"
 #include "OpenGLVideoWidget.h"
@@ -55,6 +56,7 @@ private:
     RenderType m_renderType = RenderType::SDL2;
     QAction *m_useSDLRendererAction;
     QAction *m_useOpenGLRendererAction;
+    QComboBox *m_playbackSpeedCombo;
 
     OpenNetWorkVideoWindow *m_openNetworkVideoWindow;
     QHBoxLayout *m_statusBarLayout;
@@ -64,10 +66,11 @@ private:
     void initStatusBar();
     void initRenderWidgets();
     void initRenderMenu();
+    void initPlaybackSpeedControl();
     void initWindowStyle();
     void initVideoDecode();
 
-    // 当前只有一个渲染器接收帧，避免切换绘制方式时两个窗口同时消费 AVFrame
+    // 同一时间只让一个渲染器收帧
     void connectVideoRenderer();
     void clearCurrentRenderer();
     void refreshCurrentRenderer();
@@ -77,6 +80,7 @@ private:
     void startVideo(const QString &url, bool closeNetworkWindow);
     void togglePlay();
     void updatePlaybackUi(bool playing);
+    double currentPlaybackSpeed() const;
 
     QString m_lastUrl;
 

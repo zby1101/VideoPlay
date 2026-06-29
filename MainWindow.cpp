@@ -19,6 +19,7 @@ MainWindow::MainWindow(QWidget *parent) :
     m_openGLWidget(nullptr),
     m_useSDLRendererAction(nullptr),
     m_useOpenGLRendererAction(nullptr),
+    m_playbackSpeedCombo(nullptr),
     m_openNetworkVideoWindow(nullptr),
     m_statusBarLayout(nullptr),
     m_fileNameLabel(nullptr),
@@ -35,6 +36,7 @@ MainWindow::MainWindow(QWidget *parent) :
     initStatusBar();
 
     initRenderWidgets();
+    initPlaybackSpeedControl();
     initRenderMenu();
 
     resetVideoView(0);
@@ -55,7 +57,7 @@ MainWindow::MainWindow(QWidget *parent) :
 
     appendLog("Main",QString("FFmpeg VersionInfo:") + QString(av_version_info()));
 
-    // AVFrame 跨线程发送给渲染器，需要注册元类型
+    // AVFrame 会跨线程传给渲染器，先注册一下
     qRegisterMetaType<AVFrame*>("AVFrame");
 
 
@@ -88,7 +90,7 @@ void MainWindow::updateVideoTime(qint64 totalTime, qint64 currentTime)
     QString totalTimeText = formatTime(totalTime);
     QString currentTimeText = formatTime(currentTime);
 
-    // 网络流通常拿不到总时长，只显示当前播放时间
+    // 网络流经常没有总时长，这里只保留当前时间
     if(totalTime < 0)
         totalTimeText = "-";
     if(currentTime < 0)
@@ -198,7 +200,7 @@ void MainWindow::resetVideoView(int focusDelayMs)
        resize(width() + 1, height());
        resize(width() - 1, height());
 
-       // 重新抢回键盘焦点，保证空格、Esc、方向键仍然交给播放器处理
+       // 把快捷键焦点拿回来，空格和方向键还得交给播放器
        this->setFocusPolicy(Qt::StrongFocus);
        this->setFocus();
        refreshCurrentRenderer();
@@ -215,6 +217,7 @@ void MainWindow::startVideo(const QString &url, bool closeNetworkWindow)
     clearCurrentRenderer();
 
     m_lastUrl = url;
+    m_playbackSpeedCombo->setEnabled(true);
 
     QMetaObject::invokeMethod(m_videoDecode, "play", Qt::QueuedConnection);
     QMetaObject::invokeMethod(m_videoDecode, "open", Qt::QueuedConnection, Q_ARG(QString, url));
@@ -229,6 +232,10 @@ void MainWindow::startVideo(const QString &url, bool closeNetworkWindow)
 
         QFileInfo info(url);
         setFileNameShow(info.fileName());
+        const bool isNetwork = m_videoDecode->m_isNetworkVideo;
+        m_playbackSpeedCombo->setEnabled(!isNetwork);
+        if (isNetwork)
+            m_playbackSpeedCombo->setCurrentText("1.0x");
 
         if (closeNetworkWindow && m_openNetworkVideoWindow)
             m_openNetworkVideoWindow->close();
@@ -333,6 +340,29 @@ void MainWindow::initRenderMenu()
     });
 }
 
+void MainWindow::initPlaybackSpeedControl()
+{
+    m_playbackSpeedCombo = new QComboBox(ui->controlBar);
+    m_playbackSpeedCombo->addItem(tr("0.5x"), 0.5);
+    m_playbackSpeedCombo->addItem(tr("0.75x"), 0.75);
+    m_playbackSpeedCombo->addItem(tr("1.0x"), 1.0);
+    m_playbackSpeedCombo->addItem(tr("1.25x"), 1.25);
+    m_playbackSpeedCombo->addItem(tr("1.5x"), 1.5);
+    m_playbackSpeedCombo->addItem(tr("2.0x"), 2.0);
+    m_playbackSpeedCombo->setCurrentText("1.0x");
+    m_playbackSpeedCombo->setToolTip(tr("播放速度"));
+    m_playbackSpeedCombo->setMinimumWidth(84);
+
+    const int playButtonIndex = ui->controlLayout->indexOf(ui->playCtrl_btn);
+    ui->controlLayout->insertWidget(playButtonIndex, m_playbackSpeedCombo);
+
+    connect(m_playbackSpeedCombo, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged),
+            this, [this](int) {
+        if (m_videoDecode)
+            m_videoDecode->setPlaybackSpeed(currentPlaybackSpeed());
+    });
+}
+
 void MainWindow::initWindowStyle()
 {
     setWindowTitle(tr("VideoPlay"));
@@ -421,6 +451,24 @@ void MainWindow::initWindowStyle()
         QPushButton:pressed {
             background: #1f2833;
         }
+        QComboBox {
+            background: #202a36;
+            border: 1px solid #3b4858;
+            border-radius: 5px;
+            color: #f5f7fb;
+            min-height: 30px;
+            padding: 6px 10px;
+        }
+        QComboBox::drop-down {
+            border: 0;
+            width: 22px;
+        }
+        QComboBox QAbstractItemView {
+            background: #ffffff;
+            color: #222831;
+            selection-background-color: #edf4ff;
+            selection-color: #0f4c81;
+        }
         QStatusBar {
             background: #f7f8fa;
             color: #3a4250;
@@ -461,6 +509,14 @@ void MainWindow::updatePlaybackUi(bool playing)
     ui->playCtrl_btn->setIcon(style()->standardIcon(playing ? QStyle::SP_MediaPause : QStyle::SP_MediaPlay));
 }
 
+double MainWindow::currentPlaybackSpeed() const
+{
+    if (!m_playbackSpeedCombo)
+        return 1.0;
+
+    return m_playbackSpeedCombo->currentData().toDouble();
+}
+
 void MainWindow::initVideoDecode()
 {
     if(m_videoDecode != nullptr)
@@ -474,6 +530,7 @@ void MainWindow::initVideoDecode()
         m_videoDecode = nullptr;
     }
     m_videoDecode = new VideoDecode;
+    m_videoDecode->setPlaybackSpeed(currentPlaybackSpeed());
 
     connectVideoRenderer();
 
@@ -546,7 +603,7 @@ void MainWindow::switchRenderer(RenderType renderType)
     if ((m_sdl2Widget && m_sdl2Widget->m_isFullScreen) || (m_openGLWidget && m_openGLWidget->m_isFullScreen))
         setCurrentRendererFullScreen(false);
 
-    // 切换绘制方式时短暂停住解码，避免旧渲染器收到刚发出的帧后再释放一次
+    // 切渲染器前先停一下，别让旧渲染器吃到刚发出的帧
     const bool wasPlaying = m_videoDecode && m_videoDecode->getPlayStatus();
     if (wasPlaying)
         m_videoDecode->pause();

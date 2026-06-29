@@ -11,7 +11,7 @@ extern "C" {
     #include <libswscale/swscale.h>
 }
 
-// OpenGL 渲染窗口,当前用 QPainter 绘制转换后的 RGB 图像，方便和 Qt UI 共存
+// OpenGL 渲染窗口，目前用 QPainter 画转换后的 RGB 图
 class OpenGLVideoWidget : public QOpenGLWidget, protected QOpenGLFunctions
 {
     Q_OBJECT
@@ -43,7 +43,7 @@ private:
     QImage m_image;
     SwsContext *m_swsContext = nullptr;
 
-    // 只有视频尺寸或像素格式变化时才重建 swsContext
+    // 尺寸或像素格式变了才重建 swsContext
     int m_frameWidth = 0;
     int m_frameHeight = 0;
     AVPixelFormat m_frameFormat = AV_PIX_FMT_NONE;

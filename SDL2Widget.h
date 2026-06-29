@@ -11,7 +11,7 @@ extern "C" {
     #include "SDL.h"
     #include <libavutil/frame.h>
 }
-// SDL2 渲染窗口,普通模式嵌入 Qt 窗口，全屏模式使用独立 SDL 窗口
+// SDL2 渲染窗口，嵌入播放和独立全屏都走这里
 class SDL2Widget : public QWidget
 {
     Q_OBJECT
@@ -57,7 +57,7 @@ private:
     int m_textureWidth = 0;
     int m_textureHeight = 0;
 
-    // 切换全屏或重建 SDL Renderer 后，用最后一帧恢复画面，避免短暂黑屏
+    // 重建 SDL Renderer 后拿最后一帧补画面
     QByteArray m_cachedYuvData;
 
     int m_cachedWidth = 0;

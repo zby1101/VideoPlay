@@ -10,7 +10,7 @@ DEFINES += QT_DEPRECATED_WARNINGS
 CONFIG += c++11
 CONFIG += console
 
-# Default rules for deployment.
+# 安装路径
 qnx: target.path = /tmp/$${TARGET}/bin
 else: unix:!android: target.path = /opt/$${TARGET}/bin
 !isEmpty(target.path): INSTALLS += target
@@ -38,7 +38,7 @@ MOC_DIR = $$OUT_PWD/MOC
 UI_DIR = $$OUT_PWD/UI
 OBJECTS_DIR = $$OUT_PWD/OBJ
 
-# FFmpeg 配置
+# FFmpeg
 # GPL
 FFMPEG_HOME = Y:\work-1\win\video\ffmpeg-n5.1.6-18-g1bcb1be4a2-win64-gpl-shared-5.1
 
@@ -51,7 +51,7 @@ LIBS += -L$$FFMPEG_HOME/lib \
         -lavcodec -lavdevice -lavfilter -lavformat \
         -lavutil -lswresample -lswscale -lpostproc
 
-# SDL2 配置
+# SDL2
 SDL2HOME = Y:\work-1\win\video\SDL2-2.30.10\x86_64-w64-mingw32
 
 INCLUDEPATH += $$SDL2HOME/include/SDL2
